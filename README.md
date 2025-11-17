@@ -114,10 +114,10 @@ ALTER TABLE users ADD COLUMN first_message_sent INTEGER NOT NULL DEFAULT 0;
 
 ### 步骤四：配置 Turnstile 小组件
 
-1.选择 Turnstile 小组件，点击 **添加小组件**
-2.命名小组件，点击 **添加主机名**
-3.**添加自定义主机名** 填写刚才创建的 **WORKER_URL** （无需携带 https:// ，末尾不要/ ，例如：my-worker.example.workers.dev） 最后勾选此域，点击 **添加**
-4.勾选刚才创建的 **主机名** ，小组件模式选择 **托管** ，**预先许可** 选择 **否** ，点击 **创建**
+1.  选择 Turnstile 小组件，点击 **添加小组件** 
+2.  命名小组件，点击 **添加主机名** 
+3.  **添加自定义主机名** 填写刚才创建的 **WORKER_URL** （无需携带 https:// ，末尾不要/ ，例如：my-worker.example.workers.dev） 最后勾选此域，点击 **添加** 
+4.  勾选刚才创建的 **主机名** ，小组件模式选择 **托管** ，**预先许可** 选择 **否** ，点击 **创建**
 
 ### 步骤五：配置环境变量
 
