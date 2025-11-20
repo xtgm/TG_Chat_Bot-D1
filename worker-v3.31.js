@@ -1,6 +1,7 @@
 /**
- * Telegram Bot Worker v3.30 (Unrestricted Edition)
- * 修复: 话题删除导致死锁 | 优化: 深度自愈/黑名单重建/全链路闭环 | 变更: 解除首次文本限制
+ * Telegram Bot Worker v3.31 (Fixed Edition)
+ * 修复: 过滤菜单缺少语音/贴纸开关导致无法启用对应消息类型的问题
+ * 优化: 菜单布局更全面
  */
 
 // --- 1. 静态配置 ---
@@ -32,7 +33,7 @@ export default {
         const url = new URL(req.url);
         if (req.method === "GET") {
             if (url.pathname === "/verify") return handleVerifyPage(url, env);
-            if (url.pathname === "/") return new Response("Bot v3.30 Active", { status: 200 });
+            if (url.pathname === "/") return new Response("Bot v3.31 Active", { status: 200 });
         }
         if (req.method === "POST") {
             if (url.pathname === "/submit_token") return handleTokenSubmit(req, env);
@@ -170,18 +171,13 @@ async function sendStart(id, msg, env) {
     }
 
     const url = (env.WORKER_URL || "").replace(/\/$/, '');
-    if (!url || !env.TURNSTILE_SITE_KEY) return api(env.BOT_TOKEN, "sendMessage", { chat_id: id, text: "⚠️ 配置缺失: WORKER_URL" });
-    
-    await updUser(id, { user_state: "pending_turnstile" }, env);
-    await api(env.BOT_TOKEN, "sendMessage", { 
-        chat_id: id, text: (await getCfg('welcome_msg', env)) + "\n\n请点击验证：", 
+    if (!url || !env.TURNSTILE_SITE_KEY) return api(env.BOT_TOKEN, "sendMessage", { chat_id: id, text: (await getCfg('welcome_msg', env)) + "\n\n请点击验证：", 
         reply_markup: { inline_keyboard: [[{ text: "🛡️ 安全验证", web_app: { url: `${url}/verify?user_id=${id}` } }]] } 
     });
 }
 
 async function handleVerifiedMsg(msg, u, env) {
     const id = u.user_id, text = msg.text || "";
-    // 已移除首次发送必须为文本的限制
 
     if (text) {
         const kws = await getJsonCfg('block_keywords', env);
@@ -265,7 +261,7 @@ async function sendInfoCardToTopic(env, u, tgUser, tid, date) {
         await api(env.BOT_TOKEN, "pinChatMessage", { chat_id: env.ADMIN_GROUP_ID, message_id: card.message_id });
         await updUser(u.user_id, { user_info: { ...u.user_info, card_msg_id: card.message_id, join_date: date } }, env);
         return true;
-    } catch (e) { return false; } // 发送失败（如话题不存在）返回 false
+    } catch (e) { return false; } 
 }
 
 // --- 5. 收件箱与黑名单 ---
@@ -315,7 +311,6 @@ async function manageBlacklist(env, u, tgUser, isBlocking) {
         });
         await updUser(u.user_id, { user_info: { ...u.user_info, blacklist_msg_id: msg.message_id } }, env);
     } else {
-        // [自愈] 如果话题被删，catch后重置配置
         if (u.user_info.blacklist_msg_id) {
             try {
                 await api(env.BOT_TOKEN, "deleteMessage", { chat_id: env.ADMIN_GROUP_ID, message_id: u.user_info.blacklist_msg_id });
@@ -484,8 +479,23 @@ async function handleAdminConfig(cid, mid, type, key, val, env) {
 async function getFilterKB(env) {
     const s = async k => (await getBool(k, env)) ? "✅" : "❌";
     const b = (t, k, v) => ({ text: `${t} ${v}`, callback_data: `config:toggle:${k}:${v==="❌"}` });
-    const vals = await Promise.all(['enable_admin_receipt','enable_forward_forwarding','enable_channel_forwarding','enable_image_forwarding'].map(k=>s(k)));
-    return { inline_keyboard: [[b("回执", 'enable_admin_receipt', vals[0]), b("转发", 'enable_forward_forwarding', vals[1])], [b("频道", 'enable_channel_forwarding', vals[2]), b("媒体", 'enable_image_forwarding', vals[3])], [{ text: "🔙 返回", callback_data: "config:menu" }]] };
+    
+    const keys = [
+        'enable_admin_receipt', 'enable_forward_forwarding',
+        'enable_image_forwarding', 'enable_audio_forwarding',
+        'enable_sticker_forwarding', 'enable_link_forwarding',
+        'enable_channel_forwarding', 'enable_text_forwarding'
+    ];
+    
+    const vals = await Promise.all(keys.map(k => s(k)));
+    
+    return { inline_keyboard: [
+        [b("回执", keys[0], vals[0]), b("转发", keys[1], vals[1])],
+        [b("媒体", keys[2], vals[2]), b("语音", keys[3], vals[3])],
+        [b("贴纸", keys[4], vals[4]), b("链接", keys[5], vals[5])],
+        [b("频道", keys[6], vals[6]), b("文本", keys[7], vals[7])],
+        [{ text: "🔙 返回", callback_data: "config:menu" }]
+    ] };
 }
 
 async function getListKB(type, env) {
