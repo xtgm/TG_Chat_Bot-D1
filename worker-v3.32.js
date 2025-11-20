@@ -1,7 +1,7 @@
 /**
- * Telegram Bot Worker v3.31 (Fixed Edition)
- * 修复: 过滤菜单缺少语音/贴纸开关导致无法启用对应消息类型的问题
- * 优化: 菜单布局更全面
+ * Telegram Bot Worker v3.32 (Stable Fixed Edition)
+ * 修复: /start 点击无反应的问题 (修复了配置判断逻辑)
+ * 功能: 人机验证、话题转发、双向私聊、黑名单、管理面板
  */
 
 // --- 1. 静态配置 ---
@@ -33,7 +33,7 @@ export default {
         const url = new URL(req.url);
         if (req.method === "GET") {
             if (url.pathname === "/verify") return handleVerifyPage(url, env);
-            if (url.pathname === "/") return new Response("Bot v3.31 Active", { status: 200 });
+            if (url.pathname === "/") return new Response("Bot v3.32 Active", { status: 200 });
         }
         if (req.method === "POST") {
             if (url.pathname === "/submit_token") return handleTokenSubmit(req, env);
@@ -130,11 +130,10 @@ async function handlePrivate(msg, env, ctx) {
 
     const u = await getUser(id, env);
 
-    // [自愈] 封禁用户重启：清空黑名单状态，准备重发资料卡
+    // [自愈] 封禁用户重启
     if (u.is_blocked) {
         if (text === "/start") { 
             await updUser(id, { is_blocked: 0, user_state: 'new', block_count: 0 }, env);
-            // 尝试删除黑名单话题中的卡片
             const mockMeta = { id: id, username: u.user_info.username, first_name: u.user_info.name };
             await manageBlacklist(env, u, mockMeta, false);
             return sendStart(id, msg, env);
@@ -161,19 +160,26 @@ async function handlePrivate(msg, env, ctx) {
     if (state === 'verified') return handleVerifiedMsg(msg, u, env);
 }
 
+// --- 核心修复位置 ---
 async function sendStart(id, msg, env) {
     const u = await getUser(id, env);
     
-    // [核心修复] 尝试补发资料卡。如果报错（说明话题被删），则重置 topic_id 为 null
     if (u.topic_id) {
         const success = await sendInfoCardToTopic(env, u, msg.from, u.topic_id);
         if (!success) await updUser(id, { topic_id: null }, env);
     }
 
     const url = (env.WORKER_URL || "").replace(/\/$/, '');
-    if (!url || !env.TURNSTILE_SITE_KEY) return api(env.BOT_TOKEN, "sendMessage", { chat_id: id, text: (await getCfg('welcome_msg', env)) + "\n\n请点击验证：", 
-        reply_markup: { inline_keyboard: [[{ text: "🛡️ 安全验证", web_app: { url: `${url}/verify?user_id=${id}` } }]] } 
-    });
+    // 修复：如果 URL 和 Key 都存在，则发送按钮；否则发送普通提示或错误
+    if (url && env.TURNSTILE_SITE_KEY) {
+        return api(env.BOT_TOKEN, "sendMessage", { 
+            chat_id: id, 
+            text: (await getCfg('welcome_msg', env)) + "\n\n请点击下方按钮进行验证：", 
+            reply_markup: { inline_keyboard: [[{ text: "🛡️ 安全验证", web_app: { url: `${url}/verify?user_id=${id}` } }]] } 
+        });
+    } else {
+        return api(env.BOT_TOKEN, "sendMessage", { chat_id: id, text: (await getCfg('welcome_msg', env)) + "\n(系统提示: 未配置 WORKER_URL 或 TURNSTILE_SITE_KEY，请联系管理员)" });
+    }
 }
 
 async function handleVerifiedMsg(msg, u, env) {
@@ -221,20 +227,17 @@ async function relayToTopic(msg, u, env) {
     const uMeta = getUMeta(msg.from, u, msg.date), uid = u.user_id;
     let tid = u.topic_id;
 
-    // [自愈] 创建话题
     if (!tid) {
         if (CACHE.user_locks[uid]) return;
         CACHE.user_locks[uid] = true;
         try {
             const t = await api(env.BOT_TOKEN, "createForumTopic", { chat_id: env.ADMIN_GROUP_ID, name: uMeta.topicName });
             tid = t.message_thread_id.toString();
-            // 保存 Topic ID，稍后发送卡片
             await updUser(uid, { topic_id: tid, user_info: { ...u.user_info, name: uMeta.name, username: uMeta.username } }, env);
-            // 发送并置顶卡片
             await sendInfoCardToTopic(env, u, msg.from, tid, msg.date);
         } catch (e) { 
             delete CACHE.user_locks[uid];
-            return api(env.BOT_TOKEN, "sendMessage", { chat_id: uid, text: "系统忙" }); 
+            return api(env.BOT_TOKEN, "sendMessage", { chat_id: uid, text: "系统忙，请稍后再试" }); 
         }
         delete CACHE.user_locks[uid];
     }
@@ -250,7 +253,7 @@ async function relayToTopic(msg, u, env) {
     }
 }
 
-// [工具] 发送资料卡，返回成功状态
+// [工具] 发送资料卡
 async function sendInfoCardToTopic(env, u, tgUser, tid, date) {
     const meta = getUMeta(tgUser, u, date || (Date.now()/1000));
     try {
