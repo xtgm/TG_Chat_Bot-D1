@@ -55,10 +55,13 @@
 *   Telegram Bot Token (通过 @BotFather 获取)。
 *   Telegram 管理员群组 ID (必须是开启了话题功能的超级群组，ID 以 -100 开头，通过 @raw_data_bot 获取)。
 *   管理员 ID (你自己的 TG ID，通过 @raw_data_bot 获取)。
+*   PS：升级超级群组 有以下两种不公开群组的方法：
+*   1.可通过将群组的 **新成员是否可见消息记录** 选择 **可见** 。
+*   2.将 **管理员权限** 细分，比如关掉bot某些用不上的权限
 
 ### 步骤一：创建 D1 数据库
 
-1.  登录 Cloudflare Dashboard -> Workers 和 Pages -> D1。
+1.  登录 Cloudflare Dashboard -> 存储和数据库 -> D1数据库。
 2.  点击 **创建数据库**，命名为 `tg-bot-db` (或者你喜欢的名字)。
 3.  点击创建即可，无需做任何其他操作（代码会自动建表）。
 
@@ -105,3 +108,12 @@
 
 1.  在浏览器地址栏输入以下 URL 并回车，将 Bot 连接到 Worker：
     `https://api.telegram.org/bot<你的BOT_TOKEN>/setWebhook?url=<你的WORKER_URL>`
+    如果返回 `{"ok":true,"result":true,"description":"Webhook was set"}`，则表示部署成功。
+
+### 常见报错解答：
+
+ * [说明1] 抱歉，无法连接客服（创建话题失败）。请稍后再试。这个问题只有三个可能，第一个机器人提权失败，第二个群组ID获取不对，第三个群组不是超级群组。提权失败看我发的教程重新提权就行了，ID获取可以用nmbot拉到群里发送/id获取，超级群组，如果nmbot发送的群组ID不是-100开头的，删除重建！ 
+ * [说明2] 私聊BOT/start没有反应，变量的BOT的token错了，重新获取
+ * [说明3] 回复对方消息没反应，变量的管理员ID绑定的不对，没有识别到你
+ * [说明4] 点击配置菜单出现ERROR报错，D1数据库未绑定或者绑定的名称大小写不对
+ * [说明5] 点击配置菜单没有反应，说明D1数据库错了
